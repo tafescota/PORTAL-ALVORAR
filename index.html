@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Portal ALVORAR</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="portal-alvorar-seed.js?v=20261117-1"></script>
+<script src="portal-alvorar-seed.js?v=20261117-2"></script>
 <script src="alvorar.js?v=20261116-25-resumo"></script>
 <style>
   :root {
@@ -464,7 +464,7 @@
         <div class="bulk-filters-panel">
           <div class="bulk-panel-title">⚱ <span>FILTROS</span></div>
           <div class="bulk-filters-grid">
-            <div class="filtro-lote-field"><span>Pesquisa geral</span><input type="search" id="filtro-lote" placeholder="Pesquisar fornecedor, histórico, plano ou tipo..." oninput="filtrarNovasChavesEmLote()"></div>
+            <div class="filtro-lote-field"><span>Pesquisa geral</span><input type="search" id="filtro-lote" placeholder="Pesquisar fornecedor, histórico, plano, tipo ou valor..." oninput="filtrarNovasChavesEmLote()"></div>
             <div class="filtro-lote-field"><span>Fornecedor</span><select id="filtro-fornecedor-lote" onchange="atualizarFiltroFornecedorLote(this.value)"><option value="">Todos os fornecedores</option></select></div>
             <div class="filtro-lote-field"><span>Plano de Contas</span><select id="filtro-plano-lote" onchange="atualizarFiltroPlanoLote(this.value)"><option value="">Todos os planos</option></select></div>
             <div class="filtro-lote-field"><span>Tipo</span><select id="filtro-tipo-lote" class="bulk-type-filter" onchange="atualizarFiltroTipoLote(this.value)"><option value="">Todos os tipos</option><option value="DESPESA">Despesa/Fornecedor</option><option value="NUMERARIO ATIVO">Numerário ativo</option><option value="NUMERARIO PASSIVO">Numerário passivo</option><option value="DESCONTO">Desconto</option><option value="ACRESCIMO">Acréscimo</option></select></div>
@@ -4085,7 +4085,8 @@ function prepararPagamentosImportados(dados, abrirTelaPendencias = true) {
           numerarioTributarioMatriz: true,
           pontaNumerario: 'EMPRESA DO BANCO',
           naturezaNumerario: 'ATIVO',
-          escopoRegra: ''
+          escopoRegra: '',
+          valoresBusca: [r[COLS.VALOR_LIQ], r[COLS.VALOR_BRUTO]]
         });
       }
       return;
@@ -4100,7 +4101,7 @@ function prepararPagamentosImportados(dados, abrirTelaPendencias = true) {
         registrarResumoRegra(chaveAjuste, codigoAjuste);
         if (!codigoAjuste && !vistas.has(chaveAjuste)) {
           vistas.add(chaveAjuste);
-          novas.push({ chave: chaveAjuste, fornecedor: forn, plano, tipoDoc: tipoPonta, historico, trechoHistorico: '', trechoHistoricoIndices: [], numero, empresa: empresaOrigem, empresaOrigem, centroCusto, empresaLancamento: empresaLancamentoLinha(r), rateio: !!r.__rateio, parcelasNumerarios: linhaDoFormatoNumerarios, parcelasNumerariosIntercompany: linhaIntercompanyParcelasNumerarios, layoutF360Original, escopoRegra });
+          novas.push({ chave: chaveAjuste, fornecedor: forn, plano, tipoDoc: tipoPonta, historico, trechoHistorico: '', trechoHistoricoIndices: [], numero, empresa: empresaOrigem, empresaOrigem, centroCusto, empresaLancamento: empresaLancamentoLinha(r), rateio: !!r.__rateio, parcelasNumerarios: linhaDoFormatoNumerarios, parcelasNumerariosIntercompany: linhaIntercompanyParcelasNumerarios, layoutF360Original, escopoRegra, valoresBusca: [r[COLS.VALOR_LIQ], r[COLS.VALOR_BRUTO]] });
         }
       });
       return;
@@ -4113,7 +4114,7 @@ function prepararPagamentosImportados(dados, abrirTelaPendencias = true) {
     registrarResumoRegra(chave, codigoRegraPrincipal);
     if (!codigoRegraPrincipal && !vistas.has(chave)) {
       vistas.add(chave);
-      novas.push({ chave, fornecedor: forn, plano, tipoDoc, historico, trechoHistorico: '', trechoHistoricoIndices: [], numero, empresa: empresaOrigem, empresaOrigem, centroCusto, empresaLancamento: empresaLancamentoLinha(r), rateio: !!r.__rateio, parcelasNumerarios: linhaDoFormatoNumerarios, parcelasNumerariosIntercompany: linhaIntercompanyParcelasNumerarios, layoutF360Original, escopoRegra });
+      novas.push({ chave, fornecedor: forn, plano, tipoDoc, historico, trechoHistorico: '', trechoHistoricoIndices: [], numero, empresa: empresaOrigem, empresaOrigem, centroCusto, empresaLancamento: empresaLancamentoLinha(r), rateio: !!r.__rateio, parcelasNumerarios: linhaDoFormatoNumerarios, parcelasNumerariosIntercompany: linhaIntercompanyParcelasNumerarios, layoutF360Original, escopoRegra, valoresBusca: [r[COLS.VALOR_LIQ], r[COLS.VALOR_BRUTO]] });
     }
     if (rateioIntercompanyLinha(r)) {
       const linhaRateioNegativa = arredondarMoeda(r[COLS.VALOR_LIQ]) < 0;
@@ -4141,7 +4142,8 @@ function prepararPagamentosImportados(dados, abrirTelaPendencias = true) {
             escopoRegra,
             tipoDocOriginal: tipoDoc,
             pontaNumerario: lado,
-            naturezaNumerario
+            naturezaNumerario,
+            valoresBusca: [r[COLS.VALOR_LIQ], r[COLS.VALOR_BRUTO]]
           });
         }
       });
@@ -4174,7 +4176,8 @@ function prepararPagamentosImportados(dados, abrirTelaPendencias = true) {
             escopoRegra,
             tipoDocOriginal: tipoDoc,
             pontaNumerario: lado,
-            naturezaNumerario
+            naturezaNumerario,
+            valoresBusca: [r[COLS.VALOR_LIQ], r[COLS.VALOR_BRUTO]]
           });
         }
       });
@@ -4195,7 +4198,7 @@ function prepararPagamentosImportados(dados, abrirTelaPendencias = true) {
         registrarResumoRegra(chaveAjuste, codigoAjuste);
         if (!codigoAjuste && !vistas.has(chaveAjuste)) {
           vistas.add(chaveAjuste);
-          novas.push({ chave: chaveAjuste, fornecedor: forn, plano, tipoDoc: tipoPonta, historico, trechoHistoricoIndices: [], trechoHistorico: '', numero, empresa: empresaOrigem, empresaOrigem, centroCusto, empresaLancamento: empresaLancamentoLinha(r), rateio: !!r.__rateio, parcelasNumerarios: linhaDoFormatoNumerarios, parcelasNumerariosIntercompany: linhaIntercompanyParcelasNumerarios, layoutF360Original, escopoRegra, ajusteMultiploAutomatico });
+          novas.push({ chave: chaveAjuste, fornecedor: forn, plano, tipoDoc: tipoPonta, historico, trechoHistoricoIndices: [], trechoHistorico: '', numero, empresa: empresaOrigem, empresaOrigem, centroCusto, empresaLancamento: empresaLancamentoLinha(r), rateio: !!r.__rateio, parcelasNumerarios: linhaDoFormatoNumerarios, parcelasNumerariosIntercompany: linhaIntercompanyParcelasNumerarios, layoutF360Original, escopoRegra, ajusteMultiploAutomatico, valoresBusca: [acrescimoDesconto, r[COLS.VALOR_LIQ], r[COLS.VALOR_BRUTO]] });
         }
       });
     }
@@ -5436,7 +5439,8 @@ function novaChaveDeItemRecebimento(item) {
       numerarioTributarioMatriz: true,
       pontaNumerario: 'EMPRESA DO BANCO',
       naturezaNumerario: 'ATIVO',
-      escopoRegra: ''
+      escopoRegra: '',
+      valorRecebimento: item.total || 0
     };
   }
   const ehNumerario = item.movimento === 'numerario-rateio';
@@ -10089,8 +10093,8 @@ function configurarTelaNovasChaves() {
       ? '⚠️ Preencha as contas de débito e crédito que desejar salvar. As provisões podem ser exportadas mesmo com regras em branco.'
       : '⚠️ Preencha o código contábil do Domínio para cada combinação nova. Pode deixar em branco — o lançamento ficará marcado para revisão.';
   if (filtro) filtro.placeholder = recebimentos
-    ? 'Pesquisar forma de recebimento, empresa ou conta...'
-    : 'Pesquisar fornecedor, histórico, plano ou tipo...';
+    ? 'Pesquisar forma de recebimento, empresa, conta ou valor...'
+    : 'Pesquisar fornecedor, histórico, plano, tipo ou valor...';
   if (filtroFornecedor) {
     const campoFornecedor = filtroFornecedor.closest('.filtro-lote-field');
     if (campoFornecedor) campoFornecedor.style.display = '';
@@ -10289,6 +10293,38 @@ function alternarListaPendentes(btn) {
   btn.textContent = aberta ? 'Recolher' : 'Expandir';
 }
 
+function termosBuscaValoresNovaChave(item) {
+  const valores = [
+    ...(Array.isArray(item?.valoresBusca) ? item.valoresBusca : []),
+    item?.valor,
+    item?.total,
+    item?.valorRecebimento,
+    item?.valorLiquido,
+    item?.valorLiq,
+    item?.valorBruto,
+    item?.acrescimoDesconto
+  ];
+  const termos = new Set();
+  valores.forEach(valor => {
+    if (valor === null || valor === undefined || String(valor).trim() === '') return;
+    const numero = Number(arredondarMoeda(valor));
+    if (!Number.isFinite(numero)) return;
+    const absoluto = Math.abs(numero);
+    const fixo = absoluto.toFixed(2);
+    const ptBr = absoluto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    [
+      String(valor),
+      String(absoluto),
+      fixo,
+      fixo.replace('.', ','),
+      ptBr,
+      ptBr.replace(/\./g, ''),
+      `R$ ${ptBr}`
+    ].forEach(termo => termos.add(termo));
+  });
+  return [...termos].join(' ');
+}
+
 function textoBuscaNovaChave(item) {
   return normalizarTexto([
     rotuloUnidadeAlvorar(item.empresa), rotuloUnidadeAlvorar(item.empresaOrigem), rotuloUnidadeAlvorar(item.centroCusto), rotuloUnidadeAlvorar(item.empresaLancamento),
@@ -10305,6 +10341,7 @@ function textoBuscaNovaChave(item) {
     item.historico,
     item.trechoHistorico,
     item.numero,
+    termosBuscaValoresNovaChave(item),
     codigosTemp[item.chave]
   ].join(' '));
 }
