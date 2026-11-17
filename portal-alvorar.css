@@ -1,0 +1,285 @@
+:root {
+  --portal-accent: #2563eb;
+  --portal-accent-soft: #dbeafe;
+}
+
+body.portal-alvorar .topbar {
+  background: linear-gradient(115deg, #0d1b3e 0%, #173d78 62%, #2563eb 100%);
+}
+
+body.portal-alvorar .topbar-sub::after {
+  content: "EXCLUSIVO";
+  display: inline-flex;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255,255,255,.35);
+  border-radius: 999px;
+  color: #dbeafe;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  vertical-align: middle;
+}
+
+body.portal-alvorar #tela-home .section-header {
+  align-items: flex-end;
+}
+
+.portal-home-header {
+  margin-bottom: 22px;
+}
+
+.portal-home-header h2 {
+  margin-bottom: 4px;
+  font-size: 28px;
+}
+
+.portal-home-subtitle {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.portal-eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--portal-accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+body.portal-alvorar #tela-home .grupos-toolbar {
+  display: none;
+}
+
+.portal-lista-grupo-tecnica {
+  display: none;
+}
+
+.portal-modulos-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.portal-modulo-card {
+  position: relative;
+  min-height: 250px;
+  padding: 22px;
+  overflow: hidden;
+  border: 1px solid #dbe3ef;
+  border-top: 4px solid var(--modulo-cor, #2563eb);
+  border-radius: 16px;
+  background: linear-gradient(145deg, #fff 0%, var(--modulo-fundo, #eff6ff) 160%);
+  box-shadow: 0 12px 28px rgba(15, 39, 71, .07);
+  color: #172033;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.portal-modulo-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--modulo-cor, #2563eb);
+  box-shadow: 0 18px 38px rgba(15, 39, 71, .13);
+}
+
+.portal-modulo-card:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, .28);
+  outline-offset: 3px;
+}
+
+.portal-modulo-conciliacao { --modulo-cor: #2563eb; --modulo-fundo: #eff6ff; }
+.portal-modulo-provisoes { --modulo-cor: #059669; --modulo-fundo: #ecfdf5; }
+.portal-modulo-realocacao { --modulo-cor: #d97706; --modulo-fundo: #fffbeb; }
+
+.portal-modulo-topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.portal-modulo-icone {
+  display: inline-grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 13px;
+  background: var(--modulo-cor, #2563eb);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--modulo-cor, #2563eb) 24%, transparent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: .04em;
+}
+
+.portal-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+
+.portal-status-disponivel { background: #dcfce7; color: #166534; }
+.portal-status-configuracao { background: #fef3c7; color: #92400e; }
+
+.portal-modulo-titulo,
+.portal-modulo-descricao,
+.portal-modulo-acao {
+  display: block;
+}
+
+.portal-modulo-titulo {
+  min-height: 48px;
+  margin-bottom: 10px;
+  font-size: 18px;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.portal-modulo-descricao {
+  min-height: 60px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.portal-modulo-acao {
+  margin-top: 20px;
+  color: var(--modulo-cor, #2563eb);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.portal-configuracoes-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 17px 20px;
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 39, 71, .05);
+}
+
+.portal-configuracoes-titulo,
+.portal-configuracoes-resumo {
+  display: block;
+}
+
+.portal-configuracoes-titulo {
+  margin-bottom: 3px;
+  color: #27364d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.portal-configuracoes-resumo {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.portal-configuracoes-acoes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.portal-realocacao-intro {
+  max-width: 920px;
+  padding: 30px;
+  border-top: 4px solid #d97706;
+}
+
+.portal-realocacao-intro h3 {
+  margin: 12px 0 8px;
+  font-size: 22px;
+}
+
+.portal-realocacao-intro > p {
+  max-width: 720px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.portal-realocacao-selo {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.portal-realocacao-etapas {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 26px 0 20px;
+}
+
+.portal-realocacao-etapas > div {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  background: #fffbeb;
+}
+
+.portal-realocacao-etapas strong {
+  grid-row: 1 / span 2;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 50%;
+  background: #d97706;
+  color: #fff;
+  font-size: 12px;
+}
+
+.portal-realocacao-etapas span { font-size: 13px; font-weight: 800; }
+.portal-realocacao-etapas small { color: #78716c; font-size: 11px; }
+.portal-realocacao-aviso { margin-bottom: 0; font-size: 12px; }
+
+body.portal-alvorar #lista-grupos .grupo-row {
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(135deg, #fff 0%, #f8fbff 100%);
+  box-shadow: 0 12px 30px rgba(15, 39, 71, .08);
+}
+
+body.portal-alvorar #lista-grupos .grupo-nome {
+  font-size: 20px;
+}
+
+body.portal-alvorar #lista-grupos .badge-blue {
+  background: var(--portal-accent-soft);
+  color: #1d4ed8;
+}
+
+@media (max-width: 980px) {
+  .portal-modulos-grid { grid-template-columns: 1fr; }
+  .portal-modulo-card { min-height: 0; }
+  .portal-modulo-titulo, .portal-modulo-descricao { min-height: 0; }
+  .portal-configuracoes-card { align-items: flex-start; flex-direction: column; }
+  .portal-configuracoes-acoes { justify-content: flex-start; }
+}
+
+@media (max-width: 640px) {
+  .portal-modulo-card { padding: 18px; }
+  .portal-realocacao-etapas { grid-template-columns: 1fr; }
+}
