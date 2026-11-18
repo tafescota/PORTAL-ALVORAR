@@ -863,6 +863,44 @@
     return melhor ? melhor.categoria : null;
   }
 
+  function assinaturaItemRelatorio(item) {
+    return [item.nf, item.cfop, item.cod, item.prod, item.ncm, item.qtd, item.vunit, item.vtot]
+      .map(v => String(v == null ? '' : v).trim()).join('|');
+  }
+
+  function compararRelatoriosDuplicados(anterior, atual) {
+    const contar = itens => {
+      const mapa = new Map();
+      (itens || []).forEach(item => {
+        const chave = assinaturaItemRelatorio(item);
+        mapa.set(chave, (mapa.get(chave) || 0) + 1);
+      });
+      return mapa;
+    };
+    const a = contar(anterior.itens), b = contar(atual.itens);
+    let itensEmComum = 0;
+    a.forEach((qtd, chave) => { itensEmComum += Math.min(qtd, b.get(chave) || 0); });
+    const notasA = new Set((anterior.itens || []).map(item => String(item.nf)));
+    const notasB = new Set((atual.itens || []).map(item => String(item.nf)));
+    const notasEmComum = [...notasA].filter(nf => notasB.has(nf));
+    return {
+      cnpj: atual.cnpj || anterior.cnpj || '',
+      emps: [anterior.emp, atual.emp],
+      relatorios: [anterior, atual].map(relatorio => ({
+        empresa: relatorio.emp,
+        arquivo: relatorio.arquivo || '',
+        itens: (relatorio.itens || []).length,
+        notas: new Set((relatorio.itens || []).map(item => String(item.nf))).size
+      })),
+      itensEmComum,
+      itensSomentePrimeiro: (anterior.itens || []).length - itensEmComum,
+      itensSomenteSegundo: (atual.itens || []).length - itensEmComum,
+      notasEmComum: notasEmComum.length,
+      notasSomentePrimeiro: [...notasA].filter(nf => !notasB.has(nf)),
+      notasSomenteSegundo: [...notasB].filter(nf => !notasA.has(nf))
+    };
+  }
+
   // Ordem: regra de fornecedor (nota inteira) > sem produto (PENDENTE) > por item: produto > NCM > REVISAR
   function classificar(lancs, arquivosProdutos, regras) {
     migrarRegras(regras);
@@ -881,8 +919,9 @@
     const duplicados = [];
     (arquivosProdutos || []).forEach(a => {
       if (a.cnpj) {
-        if (cnpjs.has(a.cnpj) && cnpjs.get(a.cnpj) !== a.emp) duplicados.push({ cnpj: a.cnpj, emps: [cnpjs.get(a.cnpj), a.emp] });
-        else cnpjs.set(a.cnpj, a.emp);
+        const anterior = cnpjs.get(a.cnpj);
+        if (anterior && anterior.emp !== a.emp) duplicados.push(compararRelatoriosDuplicados(anterior, a));
+        else cnpjs.set(a.cnpj, a);
       }
       a.itens.forEach(it => { const k = it.emp + '|' + it.nf; if (!idx.has(k)) idx.set(k, []); idx.get(k).push(it); });
     });
@@ -932,7 +971,7 @@
     duplicados.forEach(d => {
       const afetadas = itens.filter(i => i.prod === TXT_SEMPROD && d.emps.includes(i.emp));
       if (!afetadas.length) return;
-      alertas.unshift({ tipo: 'RELATÓRIO DUPLICADO', texto: 'Os relatórios das empresas ' + d.emps.join(' e ') + ' têm o mesmo CNPJ (' + d.cnpj + '): um deles é de outra filial. Isso deixou ' + afetadas.length + ' nota(s) do razão sem produto (' + afetadas.map(i => 'empresa ' + i.emp + ' NF ' + i.nf).join(', ') + '). Se forem produtos, tire de novo o relatório certo; se forem serviço, podem ficar na ' + P.conta_origem + '.', grave: true });
+      alertas.unshift({ tipo: 'RELATÓRIO DUPLICADO', texto: 'Os relatórios das empresas ' + d.emps.join(' e ') + ' têm o mesmo CNPJ (' + d.cnpj + '): um deles é de outra filial. Isso deixou ' + afetadas.length + ' nota(s) do razão sem produto (' + afetadas.map(i => 'empresa ' + i.emp + ' NF ' + i.nf).join(', ') + '). Se forem produtos, tire de novo o relatório certo; se forem serviço, podem ficar na ' + P.conta_origem + '.', grave: true, comparativo: d });
     });
 
     // Rateio do valor do razão pelos itens (o razão tem ST/IPI/frete)
@@ -983,6 +1022,14 @@
   // ---------------------------------------------------------------
   // 5. EXPORTAÇÃO (layout da Planilha Modelo / lanctos.txt)
   // ---------------------------------------------------------------
+  function sanitizarHistoricoDominio(texto) {
+    return String(texto || '')
+      .replace(/[;,]+/g, ' - ')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+      .slice(0, 250);
+  }
+
   function gerarLancamentos(res, regras) {
     const P = regras.parametros;
     const origem = String(P.conta_origem);
@@ -992,9 +1039,11 @@
       const conta = String(i.conta);
       if (conta === origem || conta === 'DEFINIR') return;
       const k = i.chave + '|' + conta;
-      if (!grupos.has(k)) grupos.set(k, { nota: notas.get(i.chave), conta: i.conta, valor: 0, prods: [] });
+      if (!grupos.has(k)) grupos.set(k, { nota: notas.get(i.chave), conta: i.conta, valor: 0, prods: [], imobilizado: false });
       const g = grupos.get(k);
       g.valor += i.rat;
+      const categoria = (regras.categorias || []).find(c => c.categoria === i.cat);
+      if (categoria?.bem_duravel && String(categoria.conta_imobilizado) === conta) g.imobilizado = true;
       if (i.prod !== TXT_INTEIRA && i.prod !== TXT_SEMPROD) {
         const nc = nomeCurto(i.prod);
         if (nc && !g.prods.some(p => p.toUpperCase() === nc.toUpperCase())) g.prods.push(nc);
@@ -1004,10 +1053,12 @@
     grupos.forEach(g => {
       const v = r2(g.valor);
       if (!(v > 0.004)) return;
-      const pref = String(P.prefixo_historico || '').trim();
-      let comp = (pref ? pref + ' ' : '') + g.nota.hist.trim();
-      if (g.prods.length) comp += ' (' + g.prods.join(', ') + ')';
-      comp = comp.replace(/;/g, ',').slice(0, 250);
+      const destino = g.imobilizado ? 'ATIVO IMOBILIZADO' : (nomeConta(g.conta) || ('CONTA ' + g.conta)).toUpperCase();
+      const pref = String(P.prefixo_historico || 'RECLASSIFICACAO').trim().replace(/[\s\-:]+$/, '') || 'RECLASSIFICACAO';
+      const titulo = up(pref).includes(up(destino)) ? pref : pref + ' ' + destino;
+      let comp = titulo + ' - NF ' + g.nota.nf + (g.nota.forn ? ' - ' + g.nota.forn : '');
+      if (g.prods.length) comp += ' (' + g.prods.join(' - ') + ')';
+      comp = sanitizarHistoricoDominio(comp);
       const data = String(P.modo_data).toUpperCase() === 'ULTIMO DIA' ? ultimoDiaDoMes(g.nota.data) : g.nota.data;
       linhas.push({ data, debito: g.conta, credito: P.conta_origem, valor: v, codHist: '', complemento: comp, iniciaLote: '', filial: g.nota.emp, ccDeb: '', ccCred: '', nf: g.nota.nf, grupo: g.nota.grupo });
     });
@@ -1016,7 +1067,7 @@
 
   // Mesmo formato da macro "GERAR O ARQUIVO TXT" da Planilha Modelo: A..J separados por ";"
   function gerarTxt(linhas) {
-    return linhas.map(l => [l.data, l.debito, l.credito, l.valor.toFixed(2).replace('.', ','), l.codHist, l.complemento, l.iniciaLote, l.filial, l.ccDeb, l.ccCred].join(';')).join('\r\n') + '\r\n';
+    return linhas.map(l => [l.data, l.debito, l.credito, l.valor.toFixed(2).replace('.', ','), l.codHist, sanitizarHistoricoDominio(l.complemento), l.iniciaLote, l.filial, l.ccDeb, l.ccCred].join(';')).join('\r\n') + '\r\n';
   }
 
   // Planilha no layout da "Planilha Modelo" do Domínio (Plan1, colunas A..J, mesmos cabeçalhos).
@@ -1026,7 +1077,7 @@
   // data como número de série do Excel (não depende de fuso horário)
   function dataSerial(dataBR) { const [d, m, a] = dataBR.split('/').map(Number); return Math.round((Date.UTC(a, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000); }
   function folhaDominio(XL, linhas) {
-    const aoa = [CAB_DOMINIO].concat(linhas.map(l => [dataSerial(l.data), Number(l.debito), Number(l.credito), l.valor, null, l.complemento, null, Number(l.filial), null, null]));
+    const aoa = [CAB_DOMINIO].concat(linhas.map(l => [dataSerial(l.data), Number(l.debito), Number(l.credito), l.valor, null, sanitizarHistoricoDominio(l.complemento), null, Number(l.filial), null, null]));
     const ws = XL.utils.aoa_to_sheet(aoa);
     for (let r = 1; r <= linhas.length; r++) {
       const a = ws[XL.utils.encode_cell({ r, c: 0 })]; if (a) a.z = 'dd/mm/yyyy';
@@ -1047,7 +1098,7 @@
     return out;
   }
 
-  const nucleo = { REGRAS_INICIAIS, migrarRegras, folhaDominio, nomeGrupo, lerTexto, lerPlanilha, limparTexto, parseRazao, parseProdutos, classificar, recalcularContas, contaDoItem, gerarLancamentos, gerarTxt, codificarAnsi, nomeCurto, ncm8, categoriaPorTextoProduto, TXT_INTEIRA, TXT_SEMPROD };
+  const nucleo = { REGRAS_INICIAIS, migrarRegras, folhaDominio, nomeGrupo, lerTexto, lerPlanilha, limparTexto, parseRazao, parseProdutos, classificar, recalcularContas, contaDoItem, gerarLancamentos, gerarTxt, codificarAnsi, nomeCurto, ncm8, categoriaPorTextoProduto, compararRelatoriosDuplicados, sanitizarHistoricoDominio, TXT_INTEIRA, TXT_SEMPROD };
   if (typeof module !== 'undefined' && module.exports) { module.exports = nucleo; return; }
 
   // =================================================================
@@ -1111,6 +1162,25 @@
   }
 
   function htmlAviso() { return S.msg ? '<div class="uc-alerta uc-alerta-' + S.msg.tipo + '">' + esc(S.msg.texto) + '</div>' : ''; }
+
+  function abrirComparativoDuplicidade(indice) {
+    document.getElementById('uc-modal-comparativo')?.remove();
+    const alerta = S.res?.alertas?.[Number(indice)];
+    const c = alerta?.comparativo;
+    if (!c) return;
+    const modal = document.createElement('div');
+    modal.id = 'uc-modal-comparativo';
+    modal.className = 'uc-modal-fundo';
+    const linhas = (c.relatorios || []).map(r => '<tr><td>' + esc(r.empresa) + '</td><td>' + esc(r.arquivo) + '</td><td>' + esc(c.cnpj) + '</td><td class="n">' + r.notas + '</td><td class="n">' + r.itens + '</td></tr>').join('');
+    const listaNotas = (titulo, notas) => notas?.length ? '<div><b>' + titulo + ':</b> ' + notas.map(esc).join(', ') + '</div>' : '';
+    modal.innerHTML = '<div class="uc-modal-comparativo"><div class="uc-modal-cab"><div><h3>Comparativo dos relatórios duplicados</h3><p>O portal compara CNPJ, notas e as linhas de produto usadas na classificação.</p></div><button class="btn" type="button" data-fechar-comparativo>Fechar</button></div>' +
+      '<div class="uc-alerta uc-alerta-aviso"><b>Por que o alerta apareceu?</b> Os dois arquivos informam o mesmo CNPJ. Foram encontradas <b>' + c.itensEmComum + ' linhas de produto iguais</b> e <b>' + c.notasEmComum + ' notas iguais</b>.</div>' +
+      '<div class="uc-rolagem uc-rolagem-baixa"><table class="uc-tab"><thead><tr><th>Empresa</th><th>Arquivo</th><th>CNPJ informado</th><th class="n">Notas</th><th class="n">Itens</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' +
+      '<div class="uc-comparativo-resumo"><div><span>Itens só no primeiro</span><b>' + c.itensSomentePrimeiro + '</b></div><div><span>Itens só no segundo</span><b>' + c.itensSomenteSegundo + '</b></div><div><span>Notas em comum</span><b>' + c.notasEmComum + '</b></div></div>' +
+      '<div class="uc-ajuda">' + listaNotas('Notas somente no primeiro', c.notasSomentePrimeiro) + listaNotas('Notas somente no segundo', c.notasSomenteSegundo) + (!c.notasSomentePrimeiro.length && !c.notasSomenteSegundo.length ? 'As mesmas notas aparecem nos dois relatórios.' : '') + '</div></div>';
+    modal.addEventListener('click', event => { if (event.target === modal || event.target.closest('[data-fechar-comparativo]')) modal.remove(); });
+    el.appendChild(modal);
+  }
   function aviso(texto, tipo) {
     S.msg = { texto, tipo: tipo || 'ok' };
     const a = el && el.querySelector('#uc-aviso');
@@ -1281,7 +1351,7 @@
       '<div class="' + (pd.definir.length ? 'uc-ruim' : 'uc-bom') + '"><span>Itens sem conta</span><b>' + pd.definir.length + '</b></div>' +
       '<div class="' + (pd.diferencas.length ? 'uc-ruim' : 'uc-bom') + '"><span>Notas com diferença</span><b>' + pd.diferencas.length + '</b></div></div>';
     h += htmlStatusNotas();
-    if (pd.alertas.length) h += '<details class="card uc-card uc-pend"' + (pd.alertas.some(a => a.grave) ? ' open' : '') + '><summary>Pendências e alertas (' + pd.alertas.length + ')</summary><ul>' + pd.alertas.map(a => '<li><b>' + esc(a.tipo) + ':</b> ' + esc(a.texto) + '</li>').join('') + '</ul></details>';
+    if (pd.alertas.length) h += '<details class="card uc-card uc-pend"' + (pd.alertas.some(a => a.grave) ? ' open' : '') + '><summary>Pendências e alertas (' + pd.alertas.length + ')</summary><ul>' + pd.alertas.map((a, indice) => '<li class="' + (a.comparativo ? 'uc-alerta-duplicado' : '') + '"><b>' + esc(a.tipo) + ':</b> ' + esc(a.texto) + (a.comparativo ? ' <button class="btn btn-sm" data-acao="comparar-duplicidade" data-alerta="' + indice + '">Ver comparativo</button>' : '') + '</li>').join('') + '</ul></details>';
     h += '<div class="card uc-card"><div class="uc-filtros">' +
       '<div class="uc-seg"><button data-visao="notas" class="' + (S.visao === 'notas' ? 'ativa' : '') + '">Por nota</button><button data-visao="itens" class="' + (S.visao === 'itens' ? 'ativa' : '') + '">Por item</button></div>' +
       '<select data-f="emp">' + opt(emps, S.f.emp, 'Todas as empresas') + '</select>' +
@@ -1473,6 +1543,7 @@
       else if (a === 'limpar-sel') { S.sel.clear(); render(); }
       else if (a === 'aplicar-lote') { trocarCategoria([...S.sel], el.querySelector('#uc-lote-cat').value); S.sel.clear(); render(); }
       else if (a === 'salvar-correcoes') salvarCorrecoesComoRegra();
+      else if (a === 'comparar-duplicidade') abrirComparativoDuplicidade(t.dataset.alerta);
       else if (a === 'adicionar-regra-texto') {
         const texto = el.querySelector('#uc-regra-texto').value.trim();
         const categoriaDigitada = el.querySelector('#uc-regra-cat').value.trim();

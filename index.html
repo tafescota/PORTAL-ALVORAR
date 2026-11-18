@@ -436,6 +436,7 @@
     <div id="resumo-provisao-parcelas"></div>
     <div id="acoes-provisao-parcelas" style="display:none;gap:10px;flex-wrap:wrap;margin:0 0 16px">
       <button class="btn btn-blue" onclick="exportarProvisaoParcelas()">⬇ Exportar provisões Domínio (.xlsx)</button>
+      <button class="btn" onclick="abrirSelecaoChavesProvisao(false)">☑ Revisar chaves selecionadas</button>
       <button class="btn btn-primary" onclick="abrirModalRegrasProvisaoParcelas()">Preencher regras pendentes</button>
       <button class="btn" onclick="aplicarRegrasSalvasProvisaoParcelas()">🔁 Reaplicar regras salvas</button>
       <button class="btn" onclick="limparProvisaoParcelas()">Limpar provisões</button>
@@ -813,6 +814,7 @@ let provisaoRateioTemp = [];
 let infoProvisaoRateioTemp = null;
 let provisaoParcelasTemp = [];
 let infoProvisaoParcelasTemp = null;
+let selecaoChavesProvisaoTemp = null;
 
 const COLS = { TIPO:0, NUMERO:1, PARCELA:2, EMPRESA:3, FORNECEDOR:4, EMISSAO:5, VENCIMENTO:6, LIQUIDACAO:7, VALOR_BRUTO:8, COMPETENCIA:9, PLANO:10, CC:11, ACRESCIMO:12, VALOR_LIQ:13, CONTA:14, MEIO_PAG:15, TIPO_DOC:16, APROVADA:17, STATUS:18, HISTORICO:19 };
 
@@ -3364,6 +3366,198 @@ function linhaProvisaoParcelas(r, periodo, arquivoOrigem = '', permitirValorZera
   };
 }
 
+function chaveSelecaoProvisao(item) {
+  return [
+    item?.escopo || '',
+    item?.fornecedor || item?.forn || '',
+    item?.plano || '',
+    item?.documento || item?.tipoDoc || ''
+  ].map(normalizarTexto).join('|');
+}
+
+function linhasProvisaoImportadasCompletas() {
+  return (infoProvisaoParcelasTemp?.resultados || []).flatMap(resultado => resultado.linhas || []);
+}
+
+function gruposSelecaoChavesProvisao() {
+  const grupos = new Map();
+  linhasProvisaoImportadasCompletas().forEach(item => {
+    const chaveSelecao = chaveSelecaoProvisao(item);
+    if (!chaveSelecao) return;
+    if (!grupos.has(chaveSelecao)) grupos.set(chaveSelecao, {
+      chave: chaveSelecao,
+      empresa: item.empresa || '',
+      fornecedor: item.fornecedor || item.forn || '',
+      plano: item.plano || '',
+      documento: item.documento || item.tipoDoc || '',
+      quantidade: 0,
+      total: 0,
+      historicos: []
+    });
+    const grupo = grupos.get(chaveSelecao);
+    grupo.quantidade++;
+    grupo.total = arredondarMoeda(grupo.total + Number(item.valor || 0));
+    const historico = limparTextoECD(item.historico || item.complemento || '');
+    if (historico && grupo.historicos.length < 3 && !grupo.historicos.includes(historico)) grupo.historicos.push(historico);
+  });
+  return [...grupos.values()].sort((a, b) =>
+    String(a.documento).localeCompare(String(b.documento), 'pt-BR')
+    || String(a.fornecedor).localeCompare(String(b.fornecedor), 'pt-BR')
+    || String(a.plano).localeCompare(String(b.plano), 'pt-BR'));
+}
+
+function aplicarSelecaoChavesProvisao(chavesSelecionadas) {
+  selecaoChavesProvisaoTemp = new Set(chavesSelecionadas || []);
+  const completas = linhasProvisaoImportadasCompletas();
+  provisaoParcelasTemp = completas.filter(item => selecaoChavesProvisaoTemp.has(chaveSelecaoProvisao(item)));
+  if (infoProvisaoParcelasTemp) {
+    const grupos = gruposSelecaoChavesProvisao();
+    infoProvisaoParcelasTemp.selecaoChaves = {
+      totalChaves: grupos.length,
+      chavesSelecionadas: selecaoChavesProvisaoTemp.size,
+      linhasDisponiveis: completas.length,
+      linhasSelecionadas: provisaoParcelasTemp.length,
+      linhasNaoSelecionadas: completas.length - provisaoParcelasTemp.length
+    };
+  }
+}
+
+function fecharSelecaoChavesProvisao() {
+  document.getElementById('modal-selecao-chaves-provisao')?.remove();
+}
+
+function filtrarSelecaoChavesProvisao() {
+  const modal = document.getElementById('modal-selecao-chaves-provisao');
+  if (!modal) return;
+  const busca = normalizarTexto(modal.querySelector('[data-busca-chave-provisao]')?.value || '');
+  const documento = normalizarTexto(modal.querySelector('[data-filtro-documento-provisao]')?.value || '');
+  modal.querySelectorAll('tbody tr[data-chave-selecao]').forEach(tr => {
+    const visivel = (!busca || (tr.dataset.search || '').includes(busca)) && (!documento || tr.dataset.documento === documento);
+    tr.style.display = visivel ? '' : 'none';
+  });
+  atualizarResumoSelecaoChavesProvisao();
+}
+
+function atualizarResumoSelecaoChavesProvisao() {
+  const modal = document.getElementById('modal-selecao-chaves-provisao');
+  if (!modal) return;
+  const linhas = [...modal.querySelectorAll('tbody tr[data-chave-selecao]')];
+  const visiveis = linhas.filter(tr => tr.style.display !== 'none');
+  const marcadas = linhas.filter(tr => tr.querySelector('input[type=checkbox]')?.checked);
+  const lancamentos = marcadas.reduce((s, tr) => s + Number(tr.dataset.quantidade || 0), 0);
+  const total = marcadas.reduce((s, tr) => s + Number(tr.dataset.total || 0), 0);
+  const status = modal.querySelector('[data-status-selecao-provisao]');
+  if (status) status.textContent = `${marcadas.length} de ${linhas.length} chaves selecionadas · ${lancamentos} lançamentos · R$ ${fmtValor(total)} · ${visiveis.length} visíveis`;
+  const checkTodas = modal.querySelector('[data-todas-chaves-provisao]');
+  const marcadasVisiveis = visiveis.filter(tr => tr.querySelector('input[type=checkbox]')?.checked).length;
+  if (checkTodas) {
+    checkTodas.checked = visiveis.length > 0 && marcadasVisiveis === visiveis.length;
+    checkTodas.indeterminate = marcadasVisiveis > 0 && marcadasVisiveis < visiveis.length;
+  }
+}
+
+function alternarChavesVisiveisProvisao(marcar) {
+  const modal = document.getElementById('modal-selecao-chaves-provisao');
+  if (!modal) return;
+  modal.querySelectorAll('tbody tr[data-chave-selecao]').forEach(tr => {
+    if (tr.style.display !== 'none') tr.querySelector('input[type=checkbox]').checked = marcar;
+  });
+  atualizarResumoSelecaoChavesProvisao();
+}
+
+function abrirSelecaoChavesProvisao(obrigatoria = false, somenteNovas = false) {
+  fecharSelecaoChavesProvisao();
+  const todosGrupos = gruposSelecaoChavesProvisao();
+  const decisoesSalvas = configuracaoProvisaoParcelasGrupo().selecaoChaves || {};
+  const grupos = somenteNovas
+    ? todosGrupos.filter(grupo => !Object.prototype.hasOwnProperty.call(decisoesSalvas, grupo.chave))
+    : todosGrupos;
+  if (!grupos.length) {
+    mostrarMsgProvisaoParcelas(somenteNovas ? 'Não há chaves novas aguardando decisão.' : 'Nenhuma chave disponível para selecionar após os filtros atuais.', somenteNovas ? 'ok' : 'warn');
+    return;
+  }
+  const selecionadas = selecaoChavesProvisaoTemp instanceof Set
+    ? selecaoChavesProvisaoTemp
+    : new Set(todosGrupos.filter(grupo => decisoesSalvas[grupo.chave] === true).map(grupo => grupo.chave));
+  const documentos = [...new Set(grupos.map(grupo => grupo.documento).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const modal = document.createElement('div');
+  modal.id = 'modal-selecao-chaves-provisao';
+  modal.dataset.obrigatoria = obrigatoria ? '1' : '0';
+  modal.dataset.somenteNovas = somenteNovas ? '1' : '0';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;z-index:10100;padding:12px';
+  const linhas = grupos.map(grupo => {
+    const busca = normalizarTexto([grupo.empresa, grupo.fornecedor, grupo.plano, grupo.documento, ...grupo.historicos].join(' '));
+    const exemplos = grupo.historicos.join(' · ');
+    return `<tr data-chave-selecao="${escapeAttr(grupo.chave)}" data-search="${escapeAttr(busca)}" data-documento="${escapeAttr(normalizarTexto(grupo.documento))}" data-quantidade="${grupo.quantidade}" data-total="${grupo.total}">
+      <td><input type="checkbox" ${selecionadas.has(grupo.chave) ? 'checked' : ''} onchange="atualizarResumoSelecaoChavesProvisao()"></td>
+      <td>${escapeHtml(rotuloUnidadeAlvorar(grupo.empresa || ''))}</td>
+      <td><strong>${escapeHtml(grupo.fornecedor || '')}</strong></td>
+      <td>${escapeHtml(grupo.plano || '')}</td>
+      <td>${escapeHtml(grupo.documento || '')}</td>
+      <td style="text-align:right">${grupo.quantidade}</td>
+      <td style="text-align:right;white-space:nowrap">R$ ${fmtValor(grupo.total)}</td>
+      <td title="${escapeAttr(exemplos)}">${descTruncada(exemplos)}</td>
+    </tr>`;
+  }).join('');
+  modal.innerHTML = `<div style="background:var(--bg);border-radius:var(--radius);box-shadow:0 18px 56px rgba(0,0,0,.3);width:min(1500px,calc(100vw - 24px));max-height:94vh;display:flex;flex-direction:column">
+    <div style="padding:18px 20px 12px;border-bottom:1px solid var(--border)">
+      <h3 style="margin:0 0 5px">${somenteNovas ? 'Decidir novas chaves de provisão' : 'Revisar chaves que viram provisão'}</h3>
+      <div class="conciliacao-note">${somenteNovas ? `Foram encontradas ${grupos.length} chave${grupos.length !== 1 ? 's novas' : ' nova'}. Informe se cada uma deve virar provisão.` : 'Revise as decisões já cadastradas para este grupo.'} Marcadas viram provisão; desmarcadas não viram. A decisão fica salva e será aplicada automaticamente nos próximos meses.</div>
+      <div style="display:grid;grid-template-columns:minmax(260px,1fr) minmax(220px,320px);gap:10px;margin-top:14px">
+        <input type="search" data-busca-chave-provisao placeholder="Pesquisar empresa, fornecedor, plano, documento ou histórico..." oninput="filtrarSelecaoChavesProvisao()">
+        <select data-filtro-documento-provisao onchange="filtrarSelecaoChavesProvisao()"><option value="">Todos os documentos</option>${documentos.map(doc => `<option value="${escapeAttr(doc)}">${escapeHtml(doc)}</option>`).join('')}</select>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px">
+        <button class="btn btn-soft-blue" onclick="alternarChavesVisiveisProvisao(true)">Selecionar filtradas</button>
+        <button class="btn" onclick="alternarChavesVisiveisProvisao(false)">Desmarcar filtradas</button>
+        <span class="conciliacao-note" data-status-selecao-provisao></span>
+      </div>
+    </div>
+    <div class="table-wrap" style="overflow:auto;flex:1;margin:0;border:0;border-radius:0">
+      <table><thead><tr><th><input type="checkbox" data-todas-chaves-provisao onchange="alternarChavesVisiveisProvisao(this.checked)"></th><th>Empresa</th><th>Fornecedor</th><th>Plano de contas</th><th>Documento</th><th style="text-align:right">Itens</th><th style="text-align:right">Total</th><th>Exemplos do histórico</th></tr></thead><tbody>${linhas}</tbody></table>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap">
+      <button class="btn" onclick="cancelarSelecaoChavesProvisao()">${obrigatoria ? 'Decidir depois' : 'Cancelar'}</button>
+      <button class="btn btn-primary" onclick="confirmarSelecaoChavesProvisao()">Salvar decisões</button>
+    </div>
+  </div>`;
+  document.body.appendChild(modal);
+  filtrarSelecaoChavesProvisao();
+  setTimeout(() => modal.querySelector('input[type=search]')?.focus(), 0);
+}
+
+function cancelarSelecaoChavesProvisao() {
+  const modal = document.getElementById('modal-selecao-chaves-provisao');
+  const obrigatoria = modal?.dataset.obrigatoria === '1';
+  fecharSelecaoChavesProvisao();
+  if (!obrigatoria) return;
+  renderProvisaoParcelas();
+  mostrarMsgProvisaoParcelas('As chaves novas ficaram pendentes e serão perguntadas novamente na próxima importação. As decisões já salvas continuam aplicadas.', 'warn');
+}
+
+function confirmarSelecaoChavesProvisao() {
+  const modal = document.getElementById('modal-selecao-chaves-provisao');
+  if (!modal || !grupoAtivo) return;
+  const linhas = [...modal.querySelectorAll('tbody tr[data-chave-selecao]')];
+  const selecionadas = new Set(selecaoChavesProvisaoTemp instanceof Set ? selecaoChavesProvisaoTemp : []);
+  linhas.forEach(tr => {
+    if (tr.querySelector('input[type=checkbox]')?.checked === true) selecionadas.add(tr.dataset.chaveSelecao);
+    else selecionadas.delete(tr.dataset.chaveSelecao);
+  });
+  configGrupos[grupoAtivo] = configGrupos[grupoAtivo] || {};
+  const atual = configGrupos[grupoAtivo].provisoesParcelas || {};
+  const decisoes = { ...(atual.selecaoChaves || {}) };
+  linhas.forEach(tr => { decisoes[tr.dataset.chaveSelecao] = tr.querySelector('input[type=checkbox]')?.checked === true; });
+  configGrupos[grupoAtivo].provisoesParcelas = { ...atual, selecaoChaves: decisoes };
+  salvarStorage({ camposAlterados: ['configGrupos'] });
+  aplicarSelecaoChavesProvisao(selecionadas);
+  fecharSelecaoChavesProvisao();
+  renderProvisaoParcelas();
+  const regrasPendentes = regrasPendentesProvisaoParcelas().length;
+  if (regrasPendentes > 0) abrirModalRegrasProvisaoParcelas();
+  else mostrarMsgProvisaoParcelas(`${provisaoParcelasTemp.length} lançamento${provisaoParcelasTemp.length !== 1 ? 's' : ''} selecionado${provisaoParcelasTemp.length !== 1 ? 's' : ''} para provisão.`, 'ok');
+}
+
 const TIPOS_DOCUMENTO_PROVISAO = ['Boleto', 'Cupom Fiscal', 'Encargos Sociais', 'Folha de Pagamento', 'Nota de Débito', 'Nota Fiscal', 'Nota Fiscal de Serviço', 'Outros'];
 
 function configuracaoPadraoProvisaoParcelas(nome = grupoAtivo) {
@@ -3409,7 +3603,8 @@ function configuracaoPadraoProvisaoParcelas(nome = grupoAtivo) {
     excluirVencimentoAteEmissao: false,
     excluirLiquidacaoMesmoMes: cpSimone,
     fornecedoresBoticario: ['BOTICARIO', 'INTERBELLE - OBF - BOTICARIO PRODUTOS DE BELEZA LTDA'],
-    fornecedoresNotaDebitoEspecial: ['BOTICARIO', 'INTERBELLE - OBF - BOTICARIO PRODUTOS DE BELEZA LTDA', 'GB TECH']
+    fornecedoresNotaDebitoEspecial: ['BOTICARIO', 'INTERBELLE - OBF - BOTICARIO PRODUTOS DE BELEZA LTDA', 'GB TECH'],
+    selecaoChaves: {}
   };
 }
 
@@ -3431,7 +3626,8 @@ function configuracaoProvisaoParcelasGrupo(nome = grupoAtivo) {
     excluirVencimentoAteEmissao: salva.excluirVencimentoAteEmissao === undefined ? padrao.excluirVencimentoAteEmissao : !!salva.excluirVencimentoAteEmissao,
     excluirLiquidacaoMesmoMes: salva.excluirLiquidacaoMesmoMes === undefined ? padrao.excluirLiquidacaoMesmoMes : !!salva.excluirLiquidacaoMesmoMes,
     fornecedoresBoticario: Array.isArray(salva.fornecedoresBoticario) ? salva.fornecedoresBoticario : padrao.fornecedoresBoticario,
-    fornecedoresNotaDebitoEspecial: Array.isArray(salva.fornecedoresNotaDebitoEspecial) ? salva.fornecedoresNotaDebitoEspecial : padrao.fornecedoresNotaDebitoEspecial
+    fornecedoresNotaDebitoEspecial: Array.isArray(salva.fornecedoresNotaDebitoEspecial) ? salva.fornecedoresNotaDebitoEspecial : padrao.fornecedoresNotaDebitoEspecial,
+    selecaoChaves: salva.selecaoChaves && typeof salva.selecaoChaves === 'object' ? { ...salva.selecaoChaves } : {}
   };
 }
 
@@ -3535,8 +3731,9 @@ function montarResultadoProvisaoParcelas(dados, periodo, arquivo, cabecalhos = [
 function reprocessarProvisaoParcelasComConfiguracao() {
   if (!infoProvisaoParcelasTemp?.resultados?.length) return;
   const resultados = infoProvisaoParcelasTemp.resultados.map(resultado => montarResultadoProvisaoParcelas(resultado.dados || [], resultado.periodo, resultado.arquivo, resultado.cabecalhos || []));
-  provisaoParcelasTemp = resultados.flatMap(resultado => resultado.linhas);
   infoProvisaoParcelasTemp = { arquivos: resultados.map(resultado => resultado.arquivo), resultados };
+  if (selecaoChavesProvisaoTemp instanceof Set) aplicarSelecaoChavesProvisao(selecaoChavesProvisaoTemp);
+  else provisaoParcelasTemp = resultados.flatMap(resultado => resultado.linhas);
   renderProvisaoParcelas();
 }
 
@@ -3619,6 +3816,7 @@ function salvarConfiguracaoProvisaoParcelas() {
     fornecedoresExcluidos: lista('[data-fornecedores-excluidos]'),
     fornecedoresBoticario: lista('[data-fornecedores-boticario]'),
     fornecedoresNotaDebitoEspecial: lista('[data-fornecedores-nota-debito]'),
+    selecaoChaves: configuracaoAtual.selecaoChaves || {},
     considerarCompetenciaEmissao: configuracaoAtual.considerarCompetenciaEmissao,
     desconsiderarValorZerado: configuracaoAtual.desconsiderarValorZerado,
     aceitarSemVencimento: configuracaoAtual.aceitarSemVencimento,
@@ -3650,15 +3848,21 @@ async function processarProvisaoParcelas(files) {
       const dados = modoEhParcelasNumerarios(modo) ? leitura.dados.map(prepararLinhaParcelasNumerarios) : leitura.dados;
       return montarResultadoProvisaoParcelas(dados, periodo, file.name, leitura.cabecalhos || []);
     }));
+    selecaoChavesProvisaoTemp = null;
     provisaoParcelasTemp = resultados.flatMap(r => r.linhas);
     infoProvisaoParcelasTemp = { arquivos: resultados.map(r => r.arquivo), resultados };
-    const regrasPendentes = regrasPendentesProvisaoParcelas().length;
+    const grupos = gruposSelecaoChavesProvisao();
+    const decisoesSalvas = configuracaoProvisaoParcelasGrupo().selecaoChaves || {};
+    const selecionadasSalvas = new Set(grupos.filter(grupo => decisoesSalvas[grupo.chave] === true).map(grupo => grupo.chave));
+    const chavesNovas = grupos.filter(grupo => !Object.prototype.hasOwnProperty.call(decisoesSalvas, grupo.chave));
+    aplicarSelecaoChavesProvisao(selecionadasSalvas);
     finalizarProgressoImportacao('Provisões carregadas.');
-    if (regrasPendentes > 0) {
-      abrirModalRegrasProvisaoParcelas();
-    } else {
+    if (chavesNovas.length) abrirSelecaoChavesProvisao(true, true);
+    else {
       renderProvisaoParcelas();
-      mostrarMsgProvisaoParcelas(`${provisaoParcelasTemp.length} lançamento${provisaoParcelasTemp.length !== 1 ? 's' : ''} de provisão selecionado${provisaoParcelasTemp.length !== 1 ? 's' : ''}.`, provisaoParcelasTemp.length ? 'ok' : 'warn');
+      const regrasPendentes = regrasPendentesProvisaoParcelas().length;
+      if (regrasPendentes > 0) abrirModalRegrasProvisaoParcelas();
+      else mostrarMsgProvisaoParcelas(`${provisaoParcelasTemp.length} lançamento${provisaoParcelasTemp.length !== 1 ? 's' : ''} carregado${provisaoParcelasTemp.length !== 1 ? 's' : ''} pelas decisões de chaves já salvas.`, 'ok');
     }
   } catch (err) {
     mostrarMsgProvisaoParcelas('Erro ao importar provisões: ' + err.message, 'warn');
@@ -3687,6 +3891,7 @@ function mostrarMsgProvisaoParcelas(texto, tipo = 'ok') {
 function limparProvisaoParcelas() {
   provisaoParcelasTemp = [];
   infoProvisaoParcelasTemp = null;
+  selecaoChavesProvisaoTemp = null;
   renderProvisaoParcelas();
   mostrarMsgProvisaoParcelas('Provisões removidas desta sessão.', 'ok');
 }
@@ -3718,7 +3923,13 @@ function renderProvisaoParcelas() {
     Object.keys(r.contadores || {}).forEach(chave => { acc[chave] = (acc[chave] || 0) + r.contadores[chave]; });
     return acc;
   }, {});
-  const notasDebitoIncluidasEmProvisoes = (infoProvisaoParcelasTemp?.resultados || []).reduce((totalResultado, resultado) => totalResultado + (resultado.incluirNotaDebitoEspecialEmProvisoes ? (resultado.boticarioNotaDebito || []).length : 0), 0);
+  const notasDebitoIncluidasEmProvisoes = provisaoParcelasTemp.filter(item => {
+    const fornecedor = normalizarTexto(item.fornecedor || item.forn || '');
+    const documento = normalizarTexto(item.documento || item.tipoDoc || '');
+    return documento === 'nota de debito'
+      && ['gb tech', 'boticario', 'interbelle'].some(termo => fornecedor.includes(termo));
+  }).length;
+  const selecao = infoProvisaoParcelasTemp?.selecaoChaves || null;
   const periodosIdentificados = [...new Set((infoProvisaoParcelasTemp?.resultados || []).map(resultado => {
     const periodo = resultado.periodo || {};
     const faixa = periodo.mesInicio === periodo.mesFim
@@ -3732,7 +3943,7 @@ function renderProvisaoParcelas() {
     <div class="metric"><div class="metric-label">Empresas / unidades</div><div class="metric-value" style="font-size:18px">${empresas.size}</div></div>
     <div class="metric"><div class="metric-label">Sem débito/crédito</div><div class="metric-value ${semCodigo ? 'warn' : 'ok'}">${semCodigo}</div></div>
   </div>
-  <div class="alert alert-ok" style="margin-bottom:14px"><strong>Filtro deste grupo:</strong> ${provisaoParcelasTemp.length} em Provisões, ${(contadores.total || 0) - (contadores.selecionadas || 0) - (contadores.boticarioNotaFiscalServico || 0) - (contadores.boticarioNotaDebito || 0) - (contadores.notaFiscalServicoPrestado || 0)} desconsideradas, ${contadores.boticarioNotaFiscalServico || 0} NFS Boticário, ${contadores.boticarioNotaDebito || 0} Notas de Débito GB TECH/Boticário${notasDebitoIncluidasEmProvisoes ? ` (${notasDebitoIncluidasEmProvisoes} também incluídas em Provisões)` : ' somente na aba separada'} e ${contadores.notaFiscalServicoPrestado || 0} Notas de Serviços Prestados.</div>
+  <div class="alert alert-ok" style="margin-bottom:14px"><strong>Filtro deste grupo:</strong> ${provisaoParcelasTemp.length} em Provisões${selecao ? `, ${selecao.linhasNaoSelecionadas} fora pela seleção manual de chaves` : ''}, ${(contadores.total || 0) - (contadores.selecionadas || 0) - (contadores.boticarioNotaFiscalServico || 0) - (contadores.boticarioNotaDebito || 0) - (contadores.notaFiscalServicoPrestado || 0)} desconsideradas, ${contadores.boticarioNotaFiscalServico || 0} NFS Boticário, ${contadores.boticarioNotaDebito || 0} Notas de Débito GB TECH/Boticário${notasDebitoIncluidasEmProvisoes ? ` (${notasDebitoIncluidasEmProvisoes} também incluídas em Provisões)` : ' somente na aba separada'} e ${contadores.notaFiscalServicoPrestado || 0} Notas de Serviços Prestados.</div>
   <div class="conciliacao-note" style="margin-bottom:14px">Arquivos: ${escapeHtml((infoProvisaoParcelasTemp?.arquivos || []).join(', '))}${periodosIdentificados.length ? ` · Período identificado: ${escapeHtml(periodosIdentificados.join('; '))}` : ''}${provisaoParcelasTemp.length > 150 ? ' · Mostrando as primeiras 150 linhas na tela; a exportação inclui todas.' : ''}</div>`;
   acoes.style.display = 'flex';
   preview.style.display = '';
