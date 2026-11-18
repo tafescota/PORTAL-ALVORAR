@@ -14,6 +14,8 @@ $arquivos = @(
   'alvorar.js',
   'alvorar-worker.js',
   'visual-refinements.css',
+  'uso-consumo.css',
+  'uso-consumo.js',
   'zip-logo-topbar.webp',
   'zip-logo.webp',
   'netlify.toml',

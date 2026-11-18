@@ -7,6 +7,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="portal-alvorar-seed.js?v=20261117-2"></script>
 <script src="alvorar.js?v=20261116-25-resumo"></script>
+<link rel="stylesheet" href="uso-consumo.css?v=20261117-2">
+<script src="uso-consumo.js?v=20261117-2"></script>
 <style>
   :root {
     --bg: #ffffff; --bg2: #f4f6f9; --bg3: #eef0f3;
@@ -275,7 +277,7 @@
       <button type="button" class="portal-modulo-card portal-modulo-realocacao" onclick="mostrarTela('tela-realocacao-uso-consumo')">
         <span class="portal-modulo-topo">
           <span class="portal-modulo-icone" aria-hidden="true">UC</span>
-          <span class="portal-status portal-status-configuracao">Estrutura inicial</span>
+          <span class="portal-status portal-status-disponivel">Disponível</span>
         </span>
         <span class="portal-modulo-titulo">REALOCAÇÃO USO E CONSUMO</span>
         <span class="portal-modulo-descricao">Área separada para organizar a realocação contábil de materiais de uso e consumo.</span>
@@ -421,7 +423,7 @@
     <div class="card" style="margin-bottom:16px">
       <div class="metric-label" style="margin-bottom:8px">Provisões por competência</div>
       <p class="conciliacao-note" style="margin-bottom:14px">
-        O sistema usa a competência informada no relatório e aplica os filtros de provisões cadastrados especificamente para este grupo.
+        O sistema usa a data de emissão do relatório para identificar o período e aplica os filtros de provisões cadastrados especificamente para este grupo.
       </p>
       <button class="btn btn-sm" type="button" onclick="abrirConfiguracaoProvisaoParcelas()" style="margin-bottom:14px">Configurar filtros deste grupo</button>
       <div class="drop-area" id="drop-area-provisao-parcelas" onclick="document.getElementById('file-input-provisao-parcelas').click()" ondragover="dragOver(event)" ondragleave="dragLeave(event)" ondrop="onDropProvisaoParcelas(event)">
@@ -663,21 +665,11 @@
     <div class="section-header">
       <button class="btn btn-sm" onclick="voltarTela()">← Voltar</button>
       <div>
-        <span class="portal-eyebrow">Novo módulo</span>
+        <span class="portal-eyebrow">Módulo</span>
         <h2>Realocação Uso e Consumo</h2>
       </div>
     </div>
-    <div class="card portal-realocacao-intro">
-      <div class="portal-realocacao-selo">Estrutura preparada</div>
-      <h3>Uma área exclusiva para a realocação</h3>
-      <p>Este módulo já está separado no Portal ALVORAR. A próxima etapa é definir a planilha de entrada, as regras contábeis e o formato do arquivo de exportação.</p>
-      <div class="portal-realocacao-etapas" aria-label="Etapas previstas para o módulo">
-        <div><strong>1</strong><span>Importar</span><small>Planilha de origem</small></div>
-        <div><strong>2</strong><span>Revisar</span><small>Regras e pendências</small></div>
-        <div><strong>3</strong><span>Exportar</span><small>Arquivo final</small></div>
-      </div>
-      <p class="portal-realocacao-aviso">Nenhum processamento foi ativado ainda, para não assumir regras sem a sua validação.</p>
-    </div>
+    <div id="uc-app"></div>
   </div>
 
 </div>
@@ -2722,6 +2714,23 @@ function normalizarNomeColuna(valor) {
 
 function aguardarPinturaInterface() {
   return new Promise(resolve => {
+    // requestAnimationFrame deixa de rodar quando a aba fica em segundo plano.
+    // Nessa situacao, MessageChannel devolve o controle ao navegador sem
+    // interromper a importacao ate que a pessoa volte para a aba.
+    if (typeof document !== 'undefined' && document.hidden) {
+      if (typeof MessageChannel !== 'undefined') {
+        const canal = new MessageChannel();
+        canal.port1.onmessage = () => {
+          canal.port1.close();
+          canal.port2.close();
+          resolve();
+        };
+        canal.port2.postMessage(null);
+      } else {
+        setTimeout(resolve, 0);
+      }
+      return;
+    }
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => setTimeout(resolve, 0));
     else setTimeout(resolve, 0);
   });
@@ -3246,7 +3255,9 @@ function partesDataProvisaoParcelas(valor) {
   if (!valor) return null;
   let data = valor;
   if (typeof valor === 'number') data = new Date(Math.round((valor - 25569) * 86400 * 1000));
-  if (data instanceof Date && !Number.isNaN(data.getTime())) {
+  const ehDataValida = (data instanceof Date || Object.prototype.toString.call(data) === '[object Date]')
+    && typeof data.getTime === 'function' && !Number.isNaN(data.getTime());
+  if (ehDataValida) {
     return { ano: data.getFullYear(), mes: data.getMonth() + 1, dia: data.getDate() };
   }
   const texto = limparTextoECD(valor);
@@ -3278,14 +3289,29 @@ function ultimoDiaMesProvisaoParcelas(valor) {
 function periodoCompetenciaPlanilha(wb) {
   const nomePlanilha = wb.SheetNames.find(n => /parcela|t[íi]tulo/i.test(n)) || wb.SheetNames[0];
   const raw = XLSX.utils.sheet_to_json(wb.Sheets[nomePlanilha], { header: 1, defval: null });
-  const idx = raw.findIndex(row => normalizarTexto(row?.[0]).replace(/:$/, '') === 'competencia');
-  if (idx === -1) throw new Error('Não encontrei o período de Competência no topo da planilha.');
-  const inicio = raw[idx]?.[1];
-  const fim = raw[idx]?.[2] || inicio;
-  const mesInicio = chaveMesProvisaoParcelas(inicio);
-  const mesFim = chaveMesProvisaoParcelas(fim);
-  if (!mesInicio || !mesFim) throw new Error('O período de Competência da planilha não é válido.');
-  return { inicio, fim, mesInicio: Math.min(mesInicio, mesFim), mesFim: Math.max(mesInicio, mesFim), nomePlanilha };
+  const montarPeriodo = (valores, origem, rotuloOrigem) => {
+    const validos = (valores || []).map(valor => ({ valor, mes: chaveMesProvisaoParcelas(valor) })).filter(item => item.mes);
+    if (!validos.length) return null;
+    const inicio = validos.reduce((menor, item) => item.mes < menor.mes ? item : menor, validos[0]);
+    const fim = validos.reduce((maior, item) => item.mes > maior.mes ? item : maior, validos[0]);
+    return { inicio: inicio.valor, fim: fim.valor, mesInicio: inicio.mes, mesFim: fim.mes, nomePlanilha, origem, rotuloOrigem };
+  };
+  const periodoDoTopo = (campo, origem, rotuloOrigem) => {
+    const idx = raw.findIndex(row => normalizarTexto(row?.[0]).replace(/:$/, '') === campo);
+    if (idx === -1) return null;
+    return montarPeriodo([raw[idx]?.[1], raw[idx]?.[2] || raw[idx]?.[1]], origem, rotuloOrigem);
+  };
+  const periodoDaColuna = (campo, origem, rotuloOrigem) => {
+    const idxCabecalho = raw.findIndex(row => (row || []).some(celula => normalizarTexto(celula) === campo));
+    if (idxCabecalho === -1) return null;
+    const coluna = (raw[idxCabecalho] || []).findIndex(celula => normalizarTexto(celula) === campo);
+    if (coluna === -1) return null;
+    return montarPeriodo(raw.slice(idxCabecalho + 1).map(row => row?.[coluna]), origem, rotuloOrigem);
+  };
+  const periodo = periodoDoTopo('emissao', 'emissao-topo', 'filtro de Emissão')
+    || periodoDaColuna('emissao', 'emissao-coluna', 'coluna Emissão');
+  if (!periodo) throw new Error('Não encontrei uma data de Emissão válida no filtro ou na coluna Emissão.');
+  return periodo;
 }
 
 function encontrarRegraProvisaoParcelas(forn, plano, tipoDoc, historico, escopo = '') {
@@ -3693,6 +3719,13 @@ function renderProvisaoParcelas() {
     return acc;
   }, {});
   const notasDebitoIncluidasEmProvisoes = (infoProvisaoParcelasTemp?.resultados || []).reduce((totalResultado, resultado) => totalResultado + (resultado.incluirNotaDebitoEspecialEmProvisoes ? (resultado.boticarioNotaDebito || []).length : 0), 0);
+  const periodosIdentificados = [...new Set((infoProvisaoParcelasTemp?.resultados || []).map(resultado => {
+    const periodo = resultado.periodo || {};
+    const faixa = periodo.mesInicio === periodo.mesFim
+      ? rotuloMesProvisaoParcelas(periodo.inicio)
+      : `${rotuloMesProvisaoParcelas(periodo.inicio)} a ${rotuloMesProvisaoParcelas(periodo.fim)}`;
+    return faixa ? `${faixa} pelo ${periodo.rotuloOrigem || 'período informado'}` : '';
+  }).filter(Boolean))];
   resumo.innerHTML = `<div class="conciliacao-grid">
     <div class="metric"><div class="metric-label">Lançamentos selecionados</div><div class="metric-value">${provisaoParcelasTemp.length}</div></div>
     <div class="metric"><div class="metric-label">Total provisionado</div><div class="metric-value" style="font-size:18px">R$ ${fmtValor(total)}</div></div>
@@ -3700,7 +3733,7 @@ function renderProvisaoParcelas() {
     <div class="metric"><div class="metric-label">Sem débito/crédito</div><div class="metric-value ${semCodigo ? 'warn' : 'ok'}">${semCodigo}</div></div>
   </div>
   <div class="alert alert-ok" style="margin-bottom:14px"><strong>Filtro deste grupo:</strong> ${provisaoParcelasTemp.length} em Provisões, ${(contadores.total || 0) - (contadores.selecionadas || 0) - (contadores.boticarioNotaFiscalServico || 0) - (contadores.boticarioNotaDebito || 0) - (contadores.notaFiscalServicoPrestado || 0)} desconsideradas, ${contadores.boticarioNotaFiscalServico || 0} NFS Boticário, ${contadores.boticarioNotaDebito || 0} Notas de Débito GB TECH/Boticário${notasDebitoIncluidasEmProvisoes ? ` (${notasDebitoIncluidasEmProvisoes} também incluídas em Provisões)` : ' somente na aba separada'} e ${contadores.notaFiscalServicoPrestado || 0} Notas de Serviços Prestados.</div>
-  <div class="conciliacao-note" style="margin-bottom:14px">Arquivos: ${escapeHtml((infoProvisaoParcelasTemp?.arquivos || []).join(', '))}${provisaoParcelasTemp.length > 150 ? ' · Mostrando as primeiras 150 linhas na tela; a exportação inclui todas.' : ''}</div>`;
+  <div class="conciliacao-note" style="margin-bottom:14px">Arquivos: ${escapeHtml((infoProvisaoParcelasTemp?.arquivos || []).join(', '))}${periodosIdentificados.length ? ` · Período identificado: ${escapeHtml(periodosIdentificados.join('; '))}` : ''}${provisaoParcelasTemp.length > 150 ? ' · Mostrando as primeiras 150 linhas na tela; a exportação inclui todas.' : ''}</div>`;
   acoes.style.display = 'flex';
   preview.style.display = '';
   tbody.innerHTML = provisaoParcelasTemp.slice(0, 150).map((r, i) => `<tr class="${(!r.debitoConta || !r.creditoConta) ? 'sem-codigo' : ''}">
