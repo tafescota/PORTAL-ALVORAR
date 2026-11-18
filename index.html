@@ -71,6 +71,38 @@
   tr.alt { background: var(--bg2); }
   .table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--bg); }
   .table-scroll { overflow-x: auto; }
+  /* Seleção das chaves de provisão: a tabela deve caber no modal. O texto
+     quebra dentro das colunas, sem criar uma área vazia para rolagem lateral. */
+  #modal-selecao-chaves-provisao .table-wrap {
+    min-width: 0;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+  #modal-selecao-chaves-provisao table {
+    width: 100% !important;
+    min-width: 0 !important;
+    table-layout: fixed;
+  }
+  #modal-selecao-chaves-provisao th,
+  #modal-selecao-chaves-provisao td {
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+  #modal-selecao-chaves-provisao th:nth-child(1) { width: 38px; }
+  #modal-selecao-chaves-provisao th:nth-child(2) { width: 7%; }
+  #modal-selecao-chaves-provisao th:nth-child(3) { width: 11%; }
+  #modal-selecao-chaves-provisao th:nth-child(4) { width: 11%; }
+  #modal-selecao-chaves-provisao th:nth-child(5) { width: 8%; }
+  #modal-selecao-chaves-provisao th:nth-child(6) { width: 5%; }
+  #modal-selecao-chaves-provisao th:nth-child(7) { width: 9%; }
+  #modal-selecao-chaves-provisao .desc-truncate {
+    display: block;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   @media (max-width: 600px) {
     .cnpj-contas-table thead { display: none; }
     .cnpj-contas-table, .cnpj-contas-table tbody, .cnpj-contas-table tr, .cnpj-contas-table td { display: block; width: 100%; }
